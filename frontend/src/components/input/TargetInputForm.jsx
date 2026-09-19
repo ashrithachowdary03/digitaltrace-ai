@@ -3,7 +3,7 @@ import {
   Search, 
   User, 
   AtSign, 
-  Building, 
+  Link2, 
   MapPin, 
   Tag, 
   Upload, 
@@ -72,9 +72,6 @@ export default function TargetInputForm() {
 
   return (
     <div className="cyber-glass-glow rounded-2xl p-6 lg:p-8 border border-cyan-500/30 relative overflow-hidden">
-      {/* Subtle scanline background animation */}
-      <div className="absolute inset-0 cyber-grid-bg opacity-40 pointer-events-none"></div>
-
       <div className="relative z-10 space-y-6">
         
         {/* Header */}
@@ -85,7 +82,7 @@ export default function TargetInputForm() {
               Consented Target Ingestion Portal
             </h2>
             <p className="text-xs font-mono text-slate-400 mt-1">
-              Input authorized profile attributes to initiate multi-source OSINT discovery and correlation.
+              Enter any real username from any platform (GitHub, Twitter/X, Reddit, LinkedIn, Hacker News) or direct platform profile link.
             </p>
           </div>
           <div className="flex items-center gap-2">
@@ -104,52 +101,45 @@ export default function TargetInputForm() {
             <div className="space-y-1.5">
               <label className="text-xs font-semibold text-slate-300 flex items-center gap-1.5">
                 <User className="w-3.5 h-3.5 text-cyan-400" />
-                Target Full Name
+                Target Full Name (Optional)
               </label>
-              <div className="relative">
-                <input
-                  type="text"
-                  value={targetInput.name || ''}
-                  onChange={(e) => handleChange('name', e.target.value)}
-                  placeholder="e.g. Dr. Alex Vance"
-                  className="w-full px-3.5 py-2.5 rounded-xl bg-slate-900/90 border border-slate-700 text-sm text-white placeholder:text-slate-500 focus:outline-none focus:border-cyan-400 focus:ring-1 focus:ring-cyan-400 transition-all font-sans"
-                  required
-                />
-              </div>
+              <input
+                type="text"
+                value={targetInput.name || ''}
+                onChange={(e) => handleChange('name', e.target.value)}
+                placeholder="e.g. Linus Torvalds"
+                className="w-full px-3.5 py-2.5 rounded-xl bg-slate-900/90 border border-slate-700 text-sm text-white placeholder:text-slate-500 focus:outline-none focus:border-cyan-400 focus:ring-1 focus:ring-cyan-400 font-sans"
+              />
             </div>
 
             {/* Handle / Username */}
             <div className="space-y-1.5">
               <label className="text-xs font-semibold text-slate-300 flex items-center gap-1.5">
                 <AtSign className="w-3.5 h-3.5 text-cyan-400" />
-                Known Username / Handle
+                Real Username / Handle
               </label>
-              <div className="relative">
-                <input
-                  type="text"
-                  value={targetInput.username || ''}
-                  onChange={(e) => handleChange('username', e.target.value)}
-                  placeholder="e.g. alexvance_ai"
-                  className="w-full px-3.5 py-2.5 rounded-xl bg-slate-900/90 border border-slate-700 text-sm text-white placeholder:text-slate-500 focus:outline-none focus:border-cyan-400 focus:ring-1 focus:ring-cyan-400 transition-all font-mono"
-                />
-              </div>
+              <input
+                type="text"
+                value={targetInput.username || ''}
+                onChange={(e) => handleChange('username', e.target.value)}
+                placeholder="e.g. torvalds, elonmusk, spez"
+                className="w-full px-3.5 py-2.5 rounded-xl bg-slate-900/90 border border-slate-700 text-sm text-white placeholder:text-slate-500 focus:outline-none focus:border-cyan-400 focus:ring-1 focus:ring-cyan-400 font-mono"
+              />
             </div>
 
-            {/* Organization */}
+            {/* Platform Link / Profile URL */}
             <div className="space-y-1.5">
               <label className="text-xs font-semibold text-slate-300 flex items-center gap-1.5">
-                <Building className="w-3.5 h-3.5 text-cyan-400" />
-                Organization / Affiliation
+                <Link2 className="w-3.5 h-3.5 text-cyan-400" />
+                Platform Link / Profile URL
               </label>
-              <div className="relative">
-                <input
-                  type="text"
-                  value={targetInput.organization || ''}
-                  onChange={(e) => handleChange('organization', e.target.value)}
-                  placeholder="e.g. NeuroMesh Labs / Stanford"
-                  className="w-full px-3.5 py-2.5 rounded-xl bg-slate-900/90 border border-slate-700 text-sm text-white placeholder:text-slate-500 focus:outline-none focus:border-cyan-400 focus:ring-1 focus:ring-cyan-400 transition-all font-sans"
-                />
-              </div>
+              <input
+                type="text"
+                value={targetInput.platform_url || ''}
+                onChange={(e) => handleChange('platform_url', e.target.value)}
+                placeholder="e.g. https://x.com/elonmusk"
+                className="w-full px-3.5 py-2.5 rounded-xl bg-slate-900/90 border border-slate-700 text-sm text-white placeholder:text-slate-500 focus:outline-none focus:border-cyan-400 focus:ring-1 focus:ring-cyan-400 font-mono"
+              />
             </div>
 
             {/* Location */}
@@ -162,12 +152,12 @@ export default function TargetInputForm() {
                 type="text"
                 value={targetInput.location || ''}
                 onChange={(e) => handleChange('location', e.target.value)}
-                placeholder="e.g. San Francisco, CA"
-                className="w-full px-3.5 py-2.5 rounded-xl bg-slate-900/90 border border-slate-700 text-sm text-white placeholder:text-slate-500 focus:outline-none focus:border-cyan-400 focus:ring-1 focus:ring-cyan-400 transition-all font-sans"
+                placeholder="e.g. Portland, Oregon"
+                className="w-full px-3.5 py-2.5 rounded-xl bg-slate-900/90 border border-slate-700 text-sm text-white placeholder:text-slate-500 focus:outline-none focus:border-cyan-400 focus:ring-1 focus:ring-cyan-400 font-sans"
               />
             </div>
 
-            {/* Consented Photo / Avatar */}
+            {/* Consented Photo Upload */}
             <div className="space-y-1.5">
               <label className="text-xs font-semibold text-slate-300 flex items-center justify-between">
                 <span className="flex items-center gap-1.5">
@@ -215,8 +205,8 @@ export default function TargetInputForm() {
                 value={keywordInput}
                 onChange={(e) => setKeywordInput(e.target.value)}
                 onKeyDown={handleAddKeyword}
-                placeholder="Type and press Enter (e.g. AI Security)"
-                className="w-full px-3.5 py-2.5 rounded-xl bg-slate-900/90 border border-slate-700 text-sm text-white placeholder:text-slate-500 focus:outline-none focus:border-cyan-400 focus:ring-1 focus:ring-cyan-400 transition-all font-sans"
+                placeholder="e.g. Operating Systems, C, Git"
+                className="w-full px-3.5 py-2.5 rounded-xl bg-slate-900/90 border border-slate-700 text-sm text-white placeholder:text-slate-500 focus:outline-none focus:border-cyan-400 focus:ring-1 focus:ring-cyan-400 font-sans"
               />
             </div>
 
@@ -244,11 +234,11 @@ export default function TargetInputForm() {
             </div>
           )}
 
-          {/* Submit Action Bar */}
+          {/* Action Bar */}
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pt-4 border-t border-slate-800">
             <div className="flex items-center gap-2 text-xs text-slate-400">
               <ShieldCheck className="w-4 h-4 text-emerald-400" />
-              <span>Multi-signal correlation enabled with Groq LLM & Supabase sync.</span>
+              <span>Real-time live GitHub API, CrossRef Scholar, and public footprint correlation enabled.</span>
             </div>
 
             <div className="flex items-center gap-3">
@@ -268,12 +258,12 @@ export default function TargetInputForm() {
                 {isRunning ? (
                   <>
                     <RefreshCw className="w-4 h-4 animate-spin text-slate-950" />
-                    <span>Analyzing Digital Footprint...</span>
+                    <span>Querying Live Public Sources...</span>
                   </>
                 ) : (
                   <>
                     <Sparkles className="w-4 h-4 text-slate-950" />
-                    <span>Discover & Correlate Footprint</span>
+                    <span>Discover Real Footprint</span>
                   </>
                 )}
               </button>

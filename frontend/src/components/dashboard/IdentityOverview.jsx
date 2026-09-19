@@ -10,7 +10,8 @@ import {
   AlertTriangle, 
   Hash, 
   Cpu,
-  Sparkles
+  Sparkles,
+  Link2
 } from 'lucide-react';
 import { usePipeline } from '../../context/PipelineContext';
 
@@ -97,6 +98,17 @@ export default function IdentityOverview() {
                   <Building className="w-3.5 h-3.5" />
                   {candidate.primary_organization || "Independent Researcher"}
                 </span>
+                {report.target_input?.platform_url && (
+                  <a 
+                    href={report.target_input.platform_url} 
+                    target="_blank" 
+                    rel="noreferrer" 
+                    className="flex items-center gap-1 text-cyan-400 hover:text-cyan-300 underline font-mono text-[11px]"
+                  >
+                    <Link2 className="w-3.5 h-3.5" />
+                    {report.target_input.platform_url.replace(/^https?:\/\//, '').slice(0, 30)}...
+                  </a>
+                )}
                 {report.target_input.location && (
                   <span className="flex items-center gap-1 text-slate-400">
                     <MapPin className="w-3.5 h-3.5" />

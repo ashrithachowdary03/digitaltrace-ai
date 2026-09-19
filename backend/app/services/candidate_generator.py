@@ -69,9 +69,12 @@ class CandidateGenerator:
     @classmethod
     def generate_candidates(cls, target: ConsentedTargetInput) -> List[IdentityCandidate]:
         candidates: List[IdentityCandidate] = []
-        name = target.name or target.username or "Target Candidate"
-        username = target.username or ""
-        org = target.organization or ""
+        from backend.app.services.source_discovery import parse_platform_url
+        
+        parsed_platform, parsed_handle = parse_platform_url(target.platform_url) if target.platform_url else ("", "")
+        username = target.username or parsed_handle or ""
+        name = target.name or (f"User @{username}" if username else "Target Candidate")
+        platform_label = f"Platform ({parsed_platform})" if parsed_platform else (target.organization or "Verified Identity")
         
         handle_vars = cls.generate_handle_variations(name, username)
         name_aliases = cls.generate_name_aliases(name)
@@ -80,8 +83,10 @@ class CandidateGenerator:
         signals = []
         if target.name:
             signals.append("Exact/Canonical Name Match")
-        if target.username:
-            signals.append(f"Handle Seed: @{target.username}")
+        if target.username or parsed_handle:
+            signals.append(f"Handle Seed: @{username}")
+        if target.platform_url:
+            signals.append(f"Direct Profile Link: {target.platform_url}")
         if target.organization:
             signals.append(f"Organization Affiliation: {target.organization}")
         if target.location:
@@ -95,8 +100,8 @@ class CandidateGenerator:
             display_name=name,
             handle_variations=handle_vars[:8],
             potential_aliases=name_aliases[:6],
-            likelihood_score=0.94 if (target.name and target.organization) else 0.85,
-            primary_organization=org or "Independent / Multi-affiliation",
+            likelihood_score=0.96 if target.platform_url else (0.94 if (target.name and username) else 0.85),
+            primary_organization=platform_label,
             avatar_url=target.image_url or f"https://api.dicebear.com/7.x/bottts/svg?seed={name}",
             rationale=f"Primary candidate synthesized from consented inputs with {len(signals)} matching corroboration signals.",
             matched_signals=signals or ["Direct Authorized Ingestion"]
@@ -113,7 +118,7 @@ class CandidateGenerator:
                 handle_variations=sec_handle,
                 potential_aliases=name_aliases[1:3] if len(name_aliases) > 1 else name_aliases,
                 likelihood_score=0.76,
-                primary_organization=org or "Open Source Community",
+                primary_organization=platform_label or "Open Source Community",
                 avatar_url=target.image_url or f"https://api.dicebear.com/7.x/identicon/svg?seed={sec_handle[0] if sec_handle else name}",
                 rationale="Hypothesized online handle and open-source contributor identity variant.",
                 matched_signals=["Normalized Handle Permutation", "Cross-Platform Handle Stem"]

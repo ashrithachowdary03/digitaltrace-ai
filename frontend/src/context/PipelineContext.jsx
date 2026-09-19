@@ -1,18 +1,17 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import { apiClient } from '../services/api';
-import { MOCK_SHOWCASE_PROFILES } from '../services/mockData';
 
 const PipelineContext = createContext();
 
 export const PIPELINE_STAGES = [
-  { id: 1, name: "Consent & Ingestion", desc: "Validating authorization boundaries" },
+  { id: 1, name: "Consent Verification", desc: "Validating ethical boundaries & authorization" },
   { id: 2, name: "Candidate Generation", desc: "Generating name permutations & handle hypotheses" },
-  { id: 3, name: "Public Source Discovery", desc: "Querying GitHub, LinkedIn, Scholar, Devpost" },
-  { id: 4, name: "AI Information Extraction", desc: "Extracting structured entities & roles" },
-  { id: 5, name: "Entity Resolution", desc: "Resolving aliases, nick variations & syntax" },
-  { id: 6, name: "Multi-Platform Correlation", desc: "Evaluating multi-signal confidence matrix" },
-  { id: 7, name: "Graph & Timeline Construction", desc: "Synthesizing topological relationships" },
-  { id: 8, name: "Intelligence Report Ready", desc: "Compiling executive verification dossier" }
+  { id: 3, name: "Live API Source Discovery", desc: "Querying live GitHub API, CrossRef Scholar, Devpost" },
+  { id: 4, name: "AI Entity Extraction", desc: "Extracting real repositories, publications & roles" },
+  { id: 5, name: "Entity Resolution", desc: "Calculating Jaro-Winkler & Levenshtein string metrics" },
+  { id: 6, name: "Multi-Signal Correlation", desc: "Evaluating 5-signal composite confidence matrix" },
+  { id: 7, name: "Graph & Timeline Synthesis", desc: "Constructing React Flow topology & chronological timeline" },
+  { id: 8, name: "Intelligence Dossier Ready", desc: "Compiling verified footprint dossier" }
 ];
 
 export function PipelineProvider({ children }) {
@@ -21,18 +20,19 @@ export function PipelineProvider({ children }) {
   });
 
   const [targetInput, setTargetInput] = useState({
-    name: "Dr. Alex Vance",
-    username: "alexvance_ai",
-    organization: "NeuroMesh Labs",
-    location: "San Francisco, CA / Geneva",
-    image_url: "https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=400&auto=format&fit=crop&q=80",
-    keywords: ["Generative AI", "Zero-Trust", "LLM Security", "Graph Neural Networks"],
+    name: "",
+    username: "",
+    platform_url: "",
+    organization: "",
+    location: "",
+    image_url: "",
+    keywords: [],
     consent_acknowledged: true,
-    notes: "Consented profile for AI research and public speaking footprint verification."
+    notes: ""
   });
 
   const [isRunning, setIsRunning] = useState(false);
-  const [currentStage, setCurrentStage] = useState(8);
+  const [currentStage, setCurrentStage] = useState(0);
   const [report, setReport] = useState(null);
   const [activeTab, setActiveTab] = useState('home'); // 'home', 'portal', 'overview', 'graph', 'timeline', 'sources', 'evidence', 'discrepancies', 'report'
   const [selectedNode, setSelectedNode] = useState(null);
@@ -61,13 +61,16 @@ export function PipelineProvider({ children }) {
   useEffect(() => {
     // Check backend health on initial load
     apiClient.getHealth().then(data => setBackendHealth(data));
-    // Preload background report for immediate feature viewing
-    executePipeline(targetInput, true);
   }, []);
 
-  const executePipeline = async (input, isInitial = false) => {
+  const executePipeline = async (input) => {
     if (!consentGranted) {
       setShowConsentModal(true);
+      return;
+    }
+
+    if (!input.name && !input.username && !input.platform_url && !input.organization) {
+      alert("Please enter at least a Target Name, Username/Handle, or Platform Link.");
       return;
     }
 
@@ -77,7 +80,7 @@ export function PipelineProvider({ children }) {
     try {
       for (let s = 1; s <= 7; s++) {
         setCurrentStage(s);
-        await new Promise(r => setTimeout(r, isInitial ? 80 : 250));
+        await new Promise(r => setTimeout(r, 120));
       }
 
       const res = await apiClient.runPipeline({
@@ -87,31 +90,12 @@ export function PipelineProvider({ children }) {
 
       setCurrentStage(8);
       setReport(res);
-      if (!isInitial) {
-        setActiveTab('overview');
-      }
+      setActiveTab('overview');
     } catch (err) {
       console.error("Pipeline execution error:", err);
+      alert(err.message || "Pipeline execution failed. Please check backend connection.");
     } finally {
       setIsRunning(false);
-    }
-  };
-
-  const loadShowcaseProfile = (profileId) => {
-    const found = MOCK_SHOWCASE_PROFILES.find(p => p.id === profileId);
-    if (found) {
-      const updated = {
-        name: found.name,
-        username: found.username,
-        organization: found.organization,
-        location: found.location,
-        image_url: found.image_url,
-        keywords: found.keywords,
-        consent_acknowledged: true,
-        notes: found.notes
-      };
-      setTargetInput(updated);
-      executePipeline(updated);
     }
   };
 
@@ -139,7 +123,6 @@ export function PipelineProvider({ children }) {
         showExportModal,
         setShowExportModal,
         executePipeline,
-        loadShowcaseProfile,
         PIPELINE_STAGES
       }}
     >

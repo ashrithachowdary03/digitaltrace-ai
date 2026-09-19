@@ -23,8 +23,9 @@ class EntityType(str, Enum):
 
 class ConsentedTargetInput(BaseModel):
     name: Optional[str] = Field(default=None, description="Target full or partial name")
-    username: Optional[str] = Field(default=None, description="Known handle or username")
-    organization: Optional[str] = Field(default=None, description="Associated organization or company")
+    username: Optional[str] = Field(default=None, description="Known handle or username on any public platform")
+    platform_url: Optional[str] = Field(default=None, description="Direct URL of the platform profile (e.g. GitHub, LinkedIn, X, Reddit, Devpost, Medium)")
+    organization: Optional[str] = Field(default=None, description="Associated organization or platform reference")
     location: Optional[str] = Field(default=None, description="Geographic location or region")
     image_url: Optional[str] = Field(default=None, description="Consented avatar / profile photo data URL")
     keywords: Optional[List[str]] = Field(default_factory=list, description="Keywords, domains, or skills")

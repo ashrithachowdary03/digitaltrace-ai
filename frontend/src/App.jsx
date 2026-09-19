@@ -3,7 +3,6 @@ import { PipelineProvider, usePipeline } from './context/PipelineContext';
 import Navbar from './components/layout/Navbar';
 import Footer from './components/layout/Footer';
 import HomePage from './components/pages/HomePage';
-import ShowcaseDemos from './components/input/ShowcaseDemos';
 import TargetInputForm from './components/input/TargetInputForm';
 import PipelineStepper from './components/pipeline/PipelineStepper';
 import IdentityOverview from './components/dashboard/IdentityOverview';
@@ -26,13 +25,12 @@ function MainDashboard() {
 
       <main className="flex-1 max-w-7xl w-full mx-auto px-4 lg:px-8 py-6 space-y-6">
         
-        {/* 1. Home Page: Minimal Hero (Logo, Tagline, Overview, Feature Cards) */}
+        {/* 1. Home Page: Minimal (Logo, Title, Tagline) */}
         {activeTab === 'home' && <HomePage />}
 
         {/* 2. Target Ingestion Portal Page */}
         {activeTab === 'portal' && (
           <div className="space-y-6 animate-fadeIn">
-            <ShowcaseDemos />
             <TargetInputForm />
             {isRunning && <PipelineStepper />}
           </div>

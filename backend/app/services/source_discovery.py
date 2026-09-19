@@ -28,8 +28,10 @@ def parse_platform_url(url: Optional[str]) -> Tuple[str, str]:
     elif "twitter.com" in domain or "x.com" in domain:
         handle = path_parts[0] if path_parts else ""
         return ("Twitter / X", handle)
+    elif "instagram.com" in domain:
+        handle = path_parts[0] if path_parts else ""
+        return ("Instagram", handle)
     elif "linkedin.com" in domain:
-        # e.g. /in/username
         if len(path_parts) >= 2 and path_parts[0] == "in":
             handle = path_parts[1]
         elif path_parts:
@@ -38,7 +40,6 @@ def parse_platform_url(url: Optional[str]) -> Tuple[str, str]:
             handle = ""
         return ("LinkedIn", handle)
     elif "reddit.com" in domain:
-        # e.g. /user/username or /u/username
         if len(path_parts) >= 2 and path_parts[0] in ("user", "u"):
             handle = path_parts[1]
         elif path_parts:
@@ -74,22 +75,18 @@ def parse_platform_url(url: Optional[str]) -> Tuple[str, str]:
         subdomain = domain.split(".substack.com")[0]
         return ("Substack", subdomain)
     else:
-        # Generic personal domain or blog
         clean_domain = domain.replace("www.", "")
         handle = path_parts[0] if path_parts else clean_domain
         return (f"Web ({clean_domain})", handle)
 
 
 class SourceDiscoveryEngine:
-    """Discovers exclusively REAL public profile and technical footprint data from live APIs across all platforms."""
+    """Discovers exclusively REAL verified public profiles from live API endpoints with ZERO synthetic or assumed platforms."""
 
     @classmethod
-    async def query_live_github(cls, client: httpx.AsyncClient, handle: str, name: Optional[str] = None) -> Optional[PublicProfile]:
-        """Queries real live GitHub user API and repository endpoints."""
+    async def query_live_github(cls, client: httpx.AsyncClient, handle: str) -> Optional[PublicProfile]:
+        """Queries real live GitHub user API. Only returns a profile if the account ACTUALLY exists (HTTP 200)."""
         cleaned_handle = handle.replace("@", "").strip() if handle else ""
-        if not cleaned_handle and name:
-            cleaned_handle = name.lower().replace(" ", "")
-        
         if not cleaned_handle:
             return None
 
@@ -98,14 +95,17 @@ class SourceDiscoveryEngine:
         orgs_url = f"https://api.github.com/users/{cleaned_handle}/orgs"
 
         try:
-            res = await client.get(url, headers={"User-Agent": "DigitalTraceAI/1.0"})
+            res = await client.get(url, headers={"User-Agent": "DigitalTraceAI/1.0 (https://digitaltrace.ai)"})
             if res.status_code == 200:
                 data = res.json()
+                login = data.get("login")
+                if not login or login.lower() != cleaned_handle.lower():
+                    return None
                 
                 # Fetch real public repositories
                 repos_list = []
                 try:
-                    res_repos = await client.get(repos_url, headers={"User-Agent": "DigitalTraceAI/1.0"})
+                    res_repos = await client.get(repos_url, headers={"User-Agent": "DigitalTraceAI/1.0 (https://digitaltrace.ai)"})
                     if res_repos.status_code == 200:
                         repos_data = res_repos.json()
                         if isinstance(repos_data, list):
@@ -126,7 +126,7 @@ class SourceDiscoveryEngine:
                 # Fetch real organizations
                 orgs_list = []
                 try:
-                    res_orgs = await client.get(orgs_url, headers={"User-Agent": "DigitalTraceAI/1.0"})
+                    res_orgs = await client.get(orgs_url, headers={"User-Agent": "DigitalTraceAI/1.0 (https://digitaltrace.ai)"})
                     if res_orgs.status_code == 200:
                         orgs_data = res_orgs.json()
                         if isinstance(orgs_data, list):
@@ -173,7 +173,7 @@ class SourceDiscoveryEngine:
 
     @classmethod
     async def query_live_reddit(cls, client: httpx.AsyncClient, handle: str) -> Optional[PublicProfile]:
-        """Queries real public Reddit API for user karma and public profile info."""
+        """Queries real public Reddit API. Only returns if the user exists."""
         cleaned_handle = handle.replace("@", "").replace("u/", "").strip()
         if not cleaned_handle:
             return None
@@ -184,7 +184,7 @@ class SourceDiscoveryEngine:
             if res.status_code == 200:
                 body = res.json()
                 data = body.get("data", {})
-                if data and "name" in data:
+                if data and "name" in data and data.get("name", "").lower() == cleaned_handle.lower():
                     total_karma = data.get("total_karma", 0)
                     comment_karma = data.get("comment_karma", 0)
                     link_karma = data.get("link_karma", 0)
@@ -217,7 +217,7 @@ class SourceDiscoveryEngine:
 
     @classmethod
     async def query_live_hackernews(cls, client: httpx.AsyncClient, handle: str) -> Optional[PublicProfile]:
-        """Queries real public Hacker News Algolia API for username presence and karma."""
+        """Queries real public Hacker News Algolia API. Only returns if username matches and has karma."""
         cleaned_handle = handle.replace("@", "").strip()
         if not cleaned_handle:
             return None
@@ -227,7 +227,7 @@ class SourceDiscoveryEngine:
             res = await client.get(url, headers={"User-Agent": "DigitalTraceAI/1.0"})
             if res.status_code == 200:
                 data = res.json()
-                if data and data.get("username"):
+                if data and data.get("username") and data.get("username").lower() == cleaned_handle.lower():
                     karma = data.get("karma", 0)
                     about = data.get("about") or ""
                     clean_about = re.sub(r'<[^>]+>', ' ', about).strip()
@@ -241,7 +241,7 @@ class SourceDiscoveryEngine:
                         bio=clean_about or f"Hacker News community profile with {karma:,} karma.",
                         avatar_url=None,
                         location=None,
-                        current_company="Tech & Hacker Community",
+                        current_company="Tech Community Contributor",
                         followers_count=None,
                         public_repos_count=None,
                         confidence_score=0.92,
@@ -257,11 +257,11 @@ class SourceDiscoveryEngine:
 
     @classmethod
     async def query_live_crossref_scholar(cls, client: httpx.AsyncClient, name: str) -> Optional[PublicProfile]:
-        """Queries real CrossRef open academic research database for real published papers."""
-        if not name:
+        """Queries real CrossRef open academic research database for real published papers. Only returns if genuine academic papers exist."""
+        if not name or len(name.strip().split()) < 2:
             return None
             
-        encoded_name = urllib.parse.quote(name)
+        encoded_name = urllib.parse.quote(name.strip())
         url = f"https://api.crossref.org/works?query.author={encoded_name}&rows=4"
         
         try:
@@ -272,8 +272,34 @@ class SourceDiscoveryEngine:
                 
                 real_papers = []
                 for it in items:
+                    # Require authentic publication type
+                    pub_type = it.get("type", "")
+                    if pub_type not in ("journal-article", "proceedings-article", "book-chapter", "monograph"):
+                        continue
+
                     titles = it.get("title", [])
-                    title = titles[0] if titles else "Research Publication"
+                    title = titles[0] if titles else ""
+                    if not title or any(spam in title.lower() for spam in ["reviews", "gummies", "alert", "tested", "experience?", "complaints"]):
+                        continue
+
+                    # Verify that author name matches target full name
+                    authors = it.get("author", [])
+                    author_match = False
+                    for auth in authors:
+                        family = auth.get("family", "").lower().strip()
+                        given = auth.get("given", "").lower().strip()
+                        full_auth = f"{given} {family}".strip().lower()
+                        if name.lower() in full_auth:
+                            author_match = True
+                            break
+                        if family and given and len(family) > 2 and len(given) > 2:
+                            if family in name.lower() and given in name.lower():
+                                author_match = True
+                                break
+                    
+                    if not author_match:
+                        continue
+
                     container = it.get("container-title", [])
                     journal = container[0] if container else "Academic Conference / Journal"
                     published = it.get("published", {}).get("date-parts", [["2023"]])[0][0]
@@ -293,14 +319,14 @@ class SourceDiscoveryEngine:
                         platform="Google Scholar / CrossRef",
                         url=f"https://scholar.google.com/citations?view_op=search_authors&mauthors={encoded_name}",
                         handle=f"scholar:{name.lower().replace(' ', '_')}",
-                        display_name=f"{name} (Author Record)",
-                        bio=f"Documented academic author indexed in open scientific databases. Recent research: '{real_papers[0]['title'][:70]}...'",
+                        display_name=f"{name} (Academic Publications)",
+                        bio=f"Documented academic author indexed in open scientific databases with {len(real_papers)} peer-reviewed papers.",
                         avatar_url=None,
                         location=None,
                         current_company=real_papers[0].get("journal"),
                         followers_count=None,
                         public_repos_count=len(real_papers),
-                        confidence_score=0.88,
+                        confidence_score=0.90,
                         match_reasons=[
                             "CrossRef Open Academic Index Match",
                             f"{len(real_papers)} Peer-Reviewed Publications Found",
@@ -314,41 +340,47 @@ class SourceDiscoveryEngine:
 
     @classmethod
     async def query_live_wikipedia(cls, client: httpx.AsyncClient, name: str) -> Optional[PublicProfile]:
-        """Queries real Wikipedia/Wikidata public API for publicly documented figures and researchers."""
-        if not name:
+        """Queries real Wikipedia public API. Only returns if a notable matching encyclopedia page exists."""
+        if not name or len(name.strip()) < 3:
             return None
             
-        encoded = urllib.parse.quote(name)
+        encoded = urllib.parse.quote(name.strip())
         url = f"https://en.wikipedia.org/w/api.php?action=query&list=search&srsearch={encoded}&format=json&utf8=1"
         
         try:
-            res = await client.get(url, headers={"User-Agent": "DigitalTraceAI/1.0"})
+            res = await client.get(url, headers={"User-Agent": "DigitalTraceAI/1.0 (https://digitaltrace.ai; contact@digitaltrace.ai)"})
             if res.status_code == 200:
                 data = res.json()
                 results = data.get("query", {}).get("search", [])
                 if results:
                     top = results[0]
-                    if name.lower() in top.get("title", "").lower() or name.lower() in top.get("snippet", "").lower():
-                        page_title = top.get("title", "")
-                        clean_snippet = top.get("snippet", "").replace("<span class=\"searchmatch\">", "").replace("</span>", "")
+                    title = top.get("title", "")
+                    snippet = top.get("snippet", "")
+                    
+                    # Exact or very strong name match in Wikipedia title or snippet
+                    name_words = [w.lower() for w in name.strip().split() if len(w) > 2]
+                    title_lower = title.lower()
+                    
+                    if name.lower() in title_lower or all(w in title_lower or w in snippet.lower() for w in name_words):
+                        clean_snippet = re.sub(r'<[^>]+>', '', snippet).strip()
                         return PublicProfile(
                             id=f"prof-wiki-{uuid.uuid4().hex[:6]}",
                             platform="Wikipedia Public Record",
-                            url=f"https://en.wikipedia.org/wiki/{urllib.parse.quote(page_title.replace(' ', '_'))}",
-                            handle=f"wiki:{page_title}",
-                            display_name=page_title,
-                            bio=f"{clean_snippet[:200]}...",
+                            url=f"https://en.wikipedia.org/wiki/{urllib.parse.quote(title.replace(' ', '_'))}",
+                            handle=f"wiki:{title}",
+                            display_name=title,
+                            bio=f"{clean_snippet}...",
                             avatar_url=None,
                             location=None,
                             current_company="Public Notability Record",
                             followers_count=None,
                             public_repos_count=None,
-                            confidence_score=0.91,
+                            confidence_score=0.98,
                             match_reasons=["Public Encyclopedia Index Match", "Notable Public Biography"],
                             raw_data=top
                         )
-        except Exception:
-            pass
+        except Exception as e:
+            print(f"[SourceDiscovery] Live Wikipedia lookup note: {e}")
         return None
 
     @classmethod
@@ -358,7 +390,7 @@ class SourceDiscoveryEngine:
             return None
 
         platform_name, extracted_handle = parse_platform_url(target.platform_url)
-        handle = target.username or extracted_handle or (candidate.handle_variations[0] if candidate.handle_variations else "target")
+        handle = (target.username or extracted_handle or candidate.canonical_name).replace("@", "")
         name = target.name or candidate.display_name
         
         return PublicProfile(
@@ -370,7 +402,7 @@ class SourceDiscoveryEngine:
             bio=f"Direct verified public profile link provided for {name} on {platform_name}.",
             avatar_url=target.image_url,
             location=target.location or "Global",
-            current_company=f"User on {platform_name}",
+            current_company=f"Public Profile on {platform_name}",
             confidence_score=0.99,
             match_reasons=[
                 "User-Specified Direct Platform Link",
@@ -380,123 +412,11 @@ class SourceDiscoveryEngine:
         )
 
     @classmethod
-    async def check_platform_presence(cls, client: httpx.AsyncClient, target: ConsentedTargetInput, candidate: IdentityCandidate) -> List[PublicProfile]:
-        """Synthesizes verified cross-platform presence handles derived from the user's real input."""
-        name = target.name or candidate.display_name
-        
-        # Determine base handle
-        parsed_platform, parsed_handle = parse_platform_url(target.platform_url) if target.platform_url else ("", "")
-        raw_handle = target.username or parsed_handle or (candidate.handle_variations[0] if candidate.handle_variations else name.lower().replace(" ", ""))
-        handle = raw_handle.replace("@", "").replace("in/", "").replace("u/", "")
-        
-        platform_ref = parsed_platform if parsed_platform else (target.organization or "Verified Identity")
-        loc = target.location or "Public Digital Footprint"
-        
-        profiles: List[PublicProfile] = []
-
-        # 1. LinkedIn
-        li_slug = handle or name.lower().replace(" ", "-")
-        profiles.append(PublicProfile(
-            id=f"prof-li-{uuid.uuid4().hex[:6]}",
-            platform="LinkedIn",
-            url=f"https://www.linkedin.com/in/{li_slug}",
-            handle=f"in/{li_slug}",
-            display_name=name,
-            headline=f"Professional Identity associated with {platform_ref}",
-            bio=f"Public career and professional identity associated with {name}.",
-            avatar_url=target.image_url,
-            location=loc,
-            current_company=platform_ref,
-            confidence_score=0.92 if target.name else 0.80,
-            match_reasons=["Handle Stem Match", "Professional Directory Resolution"],
-            raw_data={"slug": li_slug}
-        ))
-
-        # 2. Twitter / X
-        profiles.append(PublicProfile(
-            id=f"prof-tw-{uuid.uuid4().hex[:6]}",
-            platform="Twitter / X",
-            url=f"https://x.com/{handle}",
-            handle=f"@{handle}",
-            display_name=name,
-            bio=f"Public social updates and micro-posts from @{handle}.",
-            avatar_url=target.image_url,
-            location=loc,
-            current_company=platform_ref,
-            confidence_score=0.87,
-            match_reasons=["Handle Exact Match", "Public Social Footprint"],
-            raw_data={"handle": handle}
-        ))
-
-        # 3. Devpost
-        profiles.append(PublicProfile(
-            id=f"prof-dp-{uuid.uuid4().hex[:6]}",
-            platform="Devpost",
-            url=f"https://devpost.com/{handle}",
-            handle=f"@{handle}",
-            display_name=name,
-            bio=f"Developer and builder profile on Devpost under handle @{handle}.",
-            avatar_url=target.image_url,
-            location=loc,
-            current_company=platform_ref,
-            confidence_score=0.85,
-            match_reasons=["Handle Stem Match", "Open Hackathon Registrations"],
-            raw_data={"handle": handle}
-        ))
-
-        # 4. YouTube / Media
-        profiles.append(PublicProfile(
-            id=f"prof-yt-{uuid.uuid4().hex[:6]}",
-            platform="YouTube (Tech Talks & Videos)",
-            url=f"https://www.youtube.com/results?search_query={urllib.parse.quote(name)}+{urllib.parse.quote(handle)}",
-            handle=f"@{handle}Talks",
-            display_name=name,
-            bio=f"Public tech talk recordings, demos, and presentations associated with {name}.",
-            avatar_url=target.image_url,
-            location=loc,
-            current_company=platform_ref,
-            confidence_score=0.83,
-            match_reasons=["Public Video Query", "Speaker Index Cross-Reference"],
-            raw_data={"query": f"{name} {handle}"}
-        ))
-
-        # 5. Medium / Substack Publications
-        profiles.append(PublicProfile(
-            id=f"prof-med-{uuid.uuid4().hex[:6]}",
-            platform="Medium",
-            url=f"https://medium.com/@{handle}",
-            handle=f"@{handle}",
-            display_name=name,
-            bio=f"Technical articles, engineering insights, and writings authored by @{handle}.",
-            avatar_url=target.image_url,
-            location=loc,
-            current_company=platform_ref,
-            confidence_score=0.84,
-            match_reasons=["Author Handle Match", "Public Technical Publications"],
-            raw_data={"handle": handle}
-        ))
-
-        # 6. Kaggle / Data Science & Competitive Coding
-        profiles.append(PublicProfile(
-            id=f"prof-kg-{uuid.uuid4().hex[:6]}",
-            platform="Kaggle",
-            url=f"https://www.kaggle.com/{handle}",
-            handle=f"kaggle:{handle}",
-            display_name=name,
-            bio=f"Machine learning models, notebooks, and datasets published by @{handle}.",
-            avatar_url=target.image_url,
-            location=loc,
-            current_company=platform_ref,
-            confidence_score=0.82,
-            match_reasons=["Data Science Handle Match", "Open Community Repositories"],
-            raw_data={"handle": handle}
-        ))
-
-        return profiles
-
-    @classmethod
     async def discover_all(cls, target: ConsentedTargetInput, candidate: IdentityCandidate) -> List[PublicProfile]:
-        """Discovers exclusively REAL public profiles using live parallel async API queries."""
+        """
+        Discovers strictly REAL public profiles using live parallel async API queries.
+        Zero synthetic or fabricated platforms are added.
+        """
         discovered: List[PublicProfile] = []
         
         # 0. Check if user provided direct platform URL seed
@@ -506,51 +426,85 @@ class SourceDiscoveryEngine:
 
         # Extract handle from username or platform URL
         parsed_platform, parsed_handle = parse_platform_url(target.platform_url) if target.platform_url else ("", "")
-        effective_handle = target.username or parsed_handle or ""
+        effective_handle = (target.username or parsed_handle or "").replace("@", "").strip()
+        search_name = (target.name or (candidate.canonical_name if candidate.canonical_name != "Target Candidate" else "")).strip()
 
         async with httpx.AsyncClient(timeout=6.0, follow_redirects=True) as client:
-            # Parallel real API tasks
-            tasks = [
-                cls.query_live_github(client, effective_handle, target.name),
-                cls.query_live_reddit(client, effective_handle),
-                cls.query_live_hackernews(client, effective_handle),
-                cls.query_live_crossref_scholar(client, target.name or ""),
-                cls.query_live_wikipedia(client, target.name or ""),
-                cls.check_platform_presence(client, target, candidate)
-            ]
+            tasks = []
+            
+            # 1. Query live GitHub only if a handle is provided
+            if effective_handle:
+                tasks.append(cls.query_live_github(client, effective_handle))
+            else:
+                tasks.append(asyncio.sleep(0, result=None))
+
+            # 2. Query live Reddit only if a handle is provided
+            if effective_handle:
+                tasks.append(cls.query_live_reddit(client, effective_handle))
+            else:
+                tasks.append(asyncio.sleep(0, result=None))
+
+            # 3. Query live Hacker News only if a handle is provided
+            if effective_handle:
+                tasks.append(cls.query_live_hackernews(client, effective_handle))
+            else:
+                tasks.append(asyncio.sleep(0, result=None))
+
+            # 4. Query live Scholar / CrossRef only if a full name is provided
+            if search_name:
+                tasks.append(cls.query_live_crossref_scholar(client, search_name))
+            else:
+                tasks.append(asyncio.sleep(0, result=None))
+
+            # 5. Query live Wikipedia if a name or handle is provided
+            query_str = search_name or effective_handle
+            if query_str:
+                tasks.append(cls.query_live_wikipedia(client, query_str))
+            else:
+                tasks.append(asyncio.sleep(0, result=None))
 
             results = await asyncio.gather(*tasks, return_exceptions=True)
             
-            # 1. Live GitHub
-            if not isinstance(results[0], Exception) and results[0]:
-                # Avoid duplicate if seed was already GitHub
+            # GitHub
+            if len(results) > 0 and not isinstance(results[0], Exception) and results[0]:
                 if not any(p.platform == "GitHub" and p.url == results[0].url for p in discovered):
                     discovered.append(results[0])
 
-            # 2. Live Reddit
-            if not isinstance(results[1], Exception) and results[1]:
+            # Reddit
+            if len(results) > 1 and not isinstance(results[1], Exception) and results[1]:
                 if not any(p.platform == "Reddit" and p.url == results[1].url for p in discovered):
                     discovered.append(results[1])
 
-            # 3. Live HackerNews
-            if not isinstance(results[2], Exception) and results[2]:
+            # Hacker News
+            if len(results) > 2 and not isinstance(results[2], Exception) and results[2]:
                 if not any(p.platform == "Hacker News" and p.url == results[2].url for p in discovered):
                     discovered.append(results[2])
 
-            # 4. Live Scholar / CrossRef
-            if not isinstance(results[3], Exception) and results[3]:
-                discovered.append(results[3])
+            # Scholar / CrossRef
+            if len(results) > 3 and not isinstance(results[3], Exception) and results[3]:
+                if not any("Scholar" in p.platform for p in discovered):
+                    discovered.append(results[3])
 
-            # 5. Live Wikipedia
-            if not isinstance(results[4], Exception) and results[4]:
-                discovered.append(results[4])
+            # Wikipedia
+            if len(results) > 4 and not isinstance(results[4], Exception) and results[4]:
+                if not any("Wikipedia" in p.platform for p in discovered):
+                    discovered.append(results[4])
 
-            # 6. Platform Presences
-            if not isinstance(results[5], Exception) and results[5]:
-                for prof in results[5]:
-                    # Don't duplicate platforms already discovered from live APIs or seed
-                    if any(p.platform.lower() == prof.platform.lower() for p in discovered):
-                        continue
-                    discovered.append(prof)
+        # If absolutely nothing was discovered and no seed was given, record an explicit unverified indicator
+        if not discovered:
+            discovered.append(PublicProfile(
+                id=f"prof-unv-{uuid.uuid4().hex[:6]}",
+                platform="Public Footprint Search",
+                url="",
+                handle=f"@{effective_handle}" if effective_handle else (search_name or "unknown"),
+                display_name=search_name or effective_handle or "Unverified Target",
+                bio="No verified public profiles discovered across live public endpoints (GitHub, Reddit, Hacker News, CrossRef, Wikipedia) for the submitted details.",
+                avatar_url=None,
+                location=target.location,
+                current_company="No Corroborated Public Affiliation",
+                confidence_score=0.0,
+                match_reasons=["Live Public API Discovery Completed - No Matching Records Found"],
+                raw_data={"status": "not_found"}
+            ))
 
         return discovered

@@ -6,16 +6,32 @@ from backend.app.models.schemas import (
 )
 
 class EvidenceMatrixBuilder:
-    """Generates a structured, auditable evidence and verification matrix for all extracted findings."""
+    """Generates a structured, auditable evidence and verification matrix strictly for discovered findings."""
 
     @classmethod
     def build(cls, target: ConsentedTargetInput, profiles: List[PublicProfile], entities: List[ExtractedEntity]) -> List[EvidenceItem]:
         matrix: List[EvidenceItem] = []
         name = target.name or "Primary Subject"
 
+        verified_profiles = [p for p in profiles if p.confidence_score > 0.1]
+
+        # If no verified public records were discovered
+        if not verified_profiles and not target.platform_url:
+            matrix.append(EvidenceItem(
+                id=f"ev-{uuid.uuid4().hex[:6]}",
+                claim=f"No verified public profiles or digital records corroborated for target '{name}'.",
+                source_platform="Live Public Search Endpoints",
+                source_url="",
+                supporting_evidence="Automated live queries to GitHub, Reddit, Hacker News, CrossRef, and Wikipedia returned 0 confirmed accounts.",
+                confidence=0.0,
+                verification_status=VerificationStatus.UNCERTAIN,
+                entities_involved=[name, "Unverified Footprint"]
+            ))
+            return matrix
+
         # 0. User Provided Platform URL Claim
         if target.platform_url:
-            seed_prof = next((p for p in profiles if p.id.startswith("prof-seed-")), None)
+            seed_prof = next((p for p in verified_profiles if p.id.startswith("prof-seed-")), None)
             matrix.append(EvidenceItem(
                 id=f"ev-{uuid.uuid4().hex[:6]}",
                 claim=f"Primary seed platform profile verified at '{target.platform_url}'.",
@@ -27,25 +43,37 @@ class EvidenceMatrixBuilder:
                 entities_involved=[name, seed_prof.platform if seed_prof else "Platform URL"]
             ))
 
-        # 1. Identity & Handle Corroboration Claim
-        gh_prof = next((p for p in profiles if p.platform == "GitHub"), None)
-        reddit_prof = next((p for p in profiles if p.platform == "Reddit"), None)
-        hn_prof = next((p for p in profiles if p.platform == "Hacker News"), None)
-        li_prof = next((p for p in profiles if p.platform == "LinkedIn"), None)
-        sch_prof = next((p for p in profiles if "Scholar" in p.platform), None)
-
-        if gh_prof and li_prof:
+        # 1. Wikipedia Biography Evidence (if found)
+        wiki_prof = next((p for p in verified_profiles if "Wikipedia" in p.platform), None)
+        if wiki_prof:
             matrix.append(EvidenceItem(
                 id=f"ev-{uuid.uuid4().hex[:6]}",
-                claim=f"{name} operates verified handles across GitHub ({gh_prof.handle}) and LinkedIn ({li_prof.handle}).",
-                source_platform="GitHub & LinkedIn Cross-Reference",
-                source_url=gh_prof.url,
-                supporting_evidence=f"GitHub profile bio points to LinkedIn handle and technical footprint.",
+                claim=f"Documented public biographical notability verified on Wikipedia.",
+                source_platform="Wikipedia Public API",
+                source_url=wiki_prof.url,
+                supporting_evidence=wiki_prof.bio or f"Public encyclopedia record matching '{name}'.",
                 confidence=0.96,
                 verification_status=VerificationStatus.VERIFIED,
-                entities_involved=[name, gh_prof.platform, li_prof.platform]
+                entities_involved=[name, "Wikipedia"]
             ))
 
+        # 2. GitHub Evidence (ONLY if actually discovered)
+        gh_prof = next((p for p in verified_profiles if p.platform == "GitHub"), None)
+        if gh_prof:
+            repos_count = gh_prof.public_repos_count or 0
+            matrix.append(EvidenceItem(
+                id=f"ev-{uuid.uuid4().hex[:6]}",
+                claim=f"Active public software contributions verified on GitHub ({gh_prof.handle}).",
+                source_platform="GitHub Live API",
+                source_url=gh_prof.url,
+                supporting_evidence=f"Live public GitHub profile with {repos_count} public repositories verified.",
+                confidence=0.98,
+                verification_status=VerificationStatus.VERIFIED,
+                entities_involved=[name, "GitHub"]
+            ))
+
+        # 3. Reddit Evidence (ONLY if actually discovered)
+        reddit_prof = next((p for p in verified_profiles if p.platform == "Reddit"), None)
         if reddit_prof:
             matrix.append(EvidenceItem(
                 id=f"ev-{uuid.uuid4().hex[:6]}",
@@ -58,6 +86,8 @@ class EvidenceMatrixBuilder:
                 entities_involved=[name, "Reddit"]
             ))
 
+        # 4. Hacker News Evidence (ONLY if actually discovered)
+        hn_prof = next((p for p in verified_profiles if p.platform == "Hacker News"), None)
         if hn_prof:
             matrix.append(EvidenceItem(
                 id=f"ev-{uuid.uuid4().hex[:6]}",
@@ -70,47 +100,37 @@ class EvidenceMatrixBuilder:
                 entities_involved=[name, "Hacker News"]
             ))
 
-        # 2. Employment & Affiliation Claim
-        if target.organization:
+        # 5. Academic & Research Verification Claim (ONLY if actually discovered)
+        sch_prof = next((p for p in verified_profiles if "Scholar" in p.platform), None)
+        if sch_prof:
             matrix.append(EvidenceItem(
                 id=f"ev-{uuid.uuid4().hex[:6]}",
-                claim=f"Primary stated professional affiliation confirmed at '{target.organization}'.",
-                source_platform="Organization Reference / Registry",
-                source_url=li_prof.url if li_prof else "https://linkedin.com",
-                supporting_evidence=f"Current active affiliation verified across public platform references.",
-                confidence=0.94,
+                claim=f"Peer-reviewed academic publications verified in open scientific index.",
+                source_platform="Google Scholar / CrossRef",
+                source_url=sch_prof.url,
+                supporting_evidence="Verified citation index and author co-authorship records in CrossRef.",
+                confidence=0.91,
                 verification_status=VerificationStatus.VERIFIED,
-                entities_involved=[name, target.organization]
+                entities_involved=[name, "CrossRef Academic Index"]
             ))
 
-        # 3. Evidence for each extracted entity
+        # 6. Evidence for each extracted entity
         for entity in entities:
+            if entity.entity_type.value == "PERSON" and len(entities) > 1:
+                continue
             status = entity.verification_status
             ev_snippet = entity.supporting_evidence or f"Documented entry in {entity.source_platform} records."
-            url = entity.url or (profiles[0].url if profiles else "https://public-web.org")
+            url = entity.url or (verified_profiles[0].url if verified_profiles else "")
 
             matrix.append(EvidenceItem(
                 id=f"ev-{uuid.uuid4().hex[:6]}",
-                claim=f"Confirmed association with {entity.entity_type.value.lower()}: '{entity.name}' ({entity.role or 'Key Contributor'}).",
+                claim=f"Confirmed association with {entity.entity_type.value.lower()}: '{entity.name}' ({entity.role or 'Primary Entry'}).",
                 source_platform=entity.source_platform,
                 source_url=url,
                 supporting_evidence=ev_snippet,
                 confidence=entity.confidence,
                 verification_status=status,
                 entities_involved=[name, entity.name]
-            ))
-
-        # 4. Academic & Research Verification Claim
-        if sch_prof:
-            matrix.append(EvidenceItem(
-                id=f"ev-{uuid.uuid4().hex[:6]}",
-                claim=f"Peer-reviewed academic publications and citation impact verified on Google Scholar.",
-                source_platform="Google Scholar / CrossRef",
-                source_url=sch_prof.url,
-                supporting_evidence="Verified citation index and author co-authorship graph matching university affiliations.",
-                confidence=0.91,
-                verification_status=VerificationStatus.VERIFIED,
-                entities_involved=[name, "Google Scholar", "Research Publications"]
             ))
 
         return matrix

@@ -4,21 +4,20 @@ from typing import List
 from backend.app.models.schemas import ConsentedTargetInput, IdentityCandidate
 
 class CandidateGenerator:
-    """Generates possible public identity candidates and alias permutations from consented input."""
+    """Generates candidate identity hypotheses strictly derived from user-submitted form values."""
 
     @staticmethod
     def generate_handle_variations(name: str, username: str = None) -> List[str]:
         variations = set()
         
         if username:
-            cleaned_u = username.strip().lower()
+            cleaned_u = username.strip().lower().replace("@", "")
             variations.add(cleaned_u)
-            variations.add(cleaned_u.replace("-", "_"))
-            variations.add(cleaned_u.replace("_", "-"))
-            variations.add(cleaned_u.replace(".", ""))
-            variations.add(f"{cleaned_u}dev")
-            variations.add(f"{cleaned_u}tech")
-            variations.add(f"{cleaned_u}io")
+            if "_" in cleaned_u or "-" in cleaned_u:
+                variations.add(cleaned_u.replace("-", "_"))
+                variations.add(cleaned_u.replace("_", "-"))
+            if "." in cleaned_u:
+                variations.add(cleaned_u.replace(".", ""))
 
         if name:
             parts = [re.sub(r'[^a-zA-Z0-9]', '', p.lower()) for p in name.split() if p]
@@ -30,23 +29,16 @@ class CandidateGenerator:
                 variations.add(f"{first}-{last}")
                 variations.add(f"{first[0]}{last}")
                 variations.add(f"{first}{last[0]}")
-                variations.add(f"{first}_{last[0]}")
-                variations.add(f"{last}{first[0]}")
-                variations.add(f"{first}{last}tech")
-                variations.add(f"{first}{last}dev")
-                variations.add(f"{first}{last}ai")
             elif len(parts) == 1:
                 variations.add(parts[0])
-                variations.add(f"{parts[0]}tech")
-                variations.add(f"{parts[0]}dev")
 
         return list(variations)
 
     @staticmethod
     def generate_name_aliases(name: str) -> List[str]:
         aliases = set()
-        if not name:
-            return ["Anonymous/Handle Target"]
+        if not name or not name.strip():
+            return []
             
         parts = name.strip().split()
         aliases.add(name.strip())
@@ -56,11 +48,9 @@ class CandidateGenerator:
             last = parts[-1]
             middle = parts[1:-1]
             
-            # e.g., John Kumar -> J. Kumar, John K., Kumar, John
             aliases.add(f"{first[0]}. {last}")
             aliases.add(f"{first} {last[0]}.")
             aliases.add(f"{last}, {first}")
-            aliases.add(f"{first[0]}.{last[0]}. {last}")
             if middle:
                 aliases.add(f"{first} {' '.join(middle)} {last}")
                 aliases.add(f"{first} {middle[0][0]}. {last}")
@@ -72,27 +62,44 @@ class CandidateGenerator:
         from backend.app.services.source_discovery import parse_platform_url
         
         parsed_platform, parsed_handle = parse_platform_url(target.platform_url) if target.platform_url else ("", "")
-        username = target.username or parsed_handle or ""
-        name = target.name or (f"User @{username}" if username else "Target Candidate")
-        platform_label = f"Platform ({parsed_platform})" if parsed_platform else (target.organization or "Verified Identity")
+        username = (target.username or parsed_handle or "").replace("@", "").strip()
+        name = (target.name or (f"User @{username}" if username else "Target Candidate")).strip()
+        org = target.organization.strip() if target.organization else (f"Platform ({parsed_platform})" if parsed_platform else None)
         
         handle_vars = cls.generate_handle_variations(name, username)
         name_aliases = cls.generate_name_aliases(name)
 
-        # Primary Candidate (High likelihood candidate)
+        # Evaluate submitted signal strength
         signals = []
         if target.name:
-            signals.append("Exact/Canonical Name Match")
+            signals.append(f"Submitted Target Name: '{target.name}'")
         if target.username or parsed_handle:
-            signals.append(f"Handle Seed: @{username}")
+            signals.append(f"Submitted Handle Seed: @{username}")
         if target.platform_url:
-            signals.append(f"Direct Profile Link: {target.platform_url}")
+            signals.append(f"Submitted Direct Profile Link: {target.platform_url}")
         if target.organization:
-            signals.append(f"Organization Affiliation: {target.organization}")
+            signals.append(f"Submitted Organization: {target.organization}")
         if target.location:
-            signals.append(f"Regional Corroboration: {target.location}")
+            signals.append(f"Submitted Location: {target.location}")
         if target.keywords:
-            signals.append(f"Domain Focus: {', '.join(target.keywords[:3])}")
+            signals.append(f"Submitted Domain Keywords: {', '.join(target.keywords[:4])}")
+
+        # Likelihood based strictly on quantity and specificity of user-provided information
+        has_direct_url = bool(target.platform_url)
+        has_name_and_user = bool(target.name and username)
+        has_name = bool(target.name)
+        has_user = bool(username)
+
+        if has_direct_url:
+            likelihood = 0.95
+        elif has_name_and_user and target.organization:
+            likelihood = 0.90
+        elif has_name_and_user:
+            likelihood = 0.85
+        elif has_name or has_user:
+            likelihood = 0.70
+        else:
+            likelihood = 0.20
 
         primary = IdentityCandidate(
             id=f"cand-{uuid.uuid4().hex[:8]}",
@@ -100,29 +107,30 @@ class CandidateGenerator:
             display_name=name,
             handle_variations=handle_vars[:8],
             potential_aliases=name_aliases[:6],
-            likelihood_score=0.96 if target.platform_url else (0.94 if (target.name and username) else 0.85),
-            primary_organization=platform_label,
-            avatar_url=target.image_url or f"https://api.dicebear.com/7.x/bottts/svg?seed={name}",
-            rationale=f"Primary candidate synthesized from consented inputs with {len(signals)} matching corroboration signals.",
-            matched_signals=signals or ["Direct Authorized Ingestion"]
+            likelihood_score=likelihood,
+            primary_organization=org or "Unspecified Affiliation",
+            avatar_url=target.image_url,
+            rationale=f"Primary candidate initialized from {len(signals)} consented input field(s).",
+            matched_signals=signals or ["Submitted Unspecified Input"]
         )
         candidates.append(primary)
 
-        # Secondary Candidate Hypothesis (Alternative Alias / Short-handle persona)
-        if len(handle_vars) > 1:
-            sec_handle = [h for h in handle_vars if h != username][:3]
-            alt_candidate = IdentityCandidate(
-                id=f"cand-{uuid.uuid4().hex[:8]}",
-                canonical_name=f"{name} (Developer / Online Handle Identity)",
-                display_name=f"@{sec_handle[0]}" if sec_handle else f"{name} (Alt)",
-                handle_variations=sec_handle,
-                potential_aliases=name_aliases[1:3] if len(name_aliases) > 1 else name_aliases,
-                likelihood_score=0.76,
-                primary_organization=platform_label or "Open Source Community",
-                avatar_url=target.image_url or f"https://api.dicebear.com/7.x/identicon/svg?seed={sec_handle[0] if sec_handle else name}",
-                rationale="Hypothesized online handle and open-source contributor identity variant.",
-                matched_signals=["Normalized Handle Permutation", "Cross-Platform Handle Stem"]
-            )
-            candidates.append(alt_candidate)
+        # Secondary alias candidate hypothesis only if sufficient handle permutations exist
+        if len(handle_vars) > 1 and username:
+            alt_handles = [h for h in handle_vars if h != username.lower()][:3]
+            if alt_handles:
+                alt_candidate = IdentityCandidate(
+                    id=f"cand-{uuid.uuid4().hex[:8]}",
+                    canonical_name=f"{name} (Alternate Handle)",
+                    display_name=f"@{alt_handles[0]}",
+                    handle_variations=alt_handles,
+                    potential_aliases=name_aliases[1:3] if len(name_aliases) > 1 else [],
+                    likelihood_score=round(likelihood * 0.75, 2),
+                    primary_organization=org or "Unspecified Affiliation",
+                    avatar_url=target.image_url,
+                    rationale="Hypothesized handle variation based on normalized naming patterns.",
+                    matched_signals=["Normalized Handle Permutation"]
+                )
+                candidates.append(alt_candidate)
 
         return candidates

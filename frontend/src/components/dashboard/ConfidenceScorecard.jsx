@@ -18,7 +18,7 @@ export default function ConfidenceScorecard() {
 
   const signals = [
     {
-      name: "Name Similarity (Jaro-Winkler / Levenshtein)",
+      name: "Name Similarity",
       score: correlation.name_similarity_score,
       desc: "Syntactic distance between canonical name and discovered public aliases"
     },
@@ -53,7 +53,7 @@ export default function ConfidenceScorecard() {
           <div className="flex items-center gap-2">
             <Scale className="w-4 h-4 text-cyan-400" />
             <h3 className="font-heading font-bold text-sm text-white">
-              Multi-Signal Correlation Breakdown (Section 5 & 9.5)
+              Multi-Signal Correlation Breakdown
             </h3>
           </div>
           <span className="text-[11px] font-mono text-slate-400">

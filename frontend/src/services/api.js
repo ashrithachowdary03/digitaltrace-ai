@@ -1,4 +1,12 @@
-const API_BASE = '/api';
+const getApiBase = () => {
+  const envUrl = import.meta.env.VITE_API_URL;
+  if (!envUrl) return '/api';
+  // If user passed 'https://xyz.onrender.com', ensure '/api' suffix
+  const clean = envUrl.replace(/\/+$/, '');
+  return clean.endsWith('/api') ? clean : `${clean}/api`;
+};
+
+const API_BASE = getApiBase();
 
 export const apiClient = {
   async getHealth() {
